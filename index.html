@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>InverIA</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .seccion {
+            display: none;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 10px 0;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .activa {
+            display: block;
+        }
+        button {
+            padding: 10px 15px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        input {
+            padding: 10px;
+            width: 250px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        .popup-content {
+            min-width: 250px;
+            font-family: Arial, sans-serif;
+        }
+        .popup-content h3 {
+            margin: 0 0 12px 0;
+            color: #2c3e50;
+            font-size: 16px;
+        }
+        .popup-content p {
+            margin: 8px 0;
+            line-height: 1.4;
+            font-size: 14px;
+        }
+        .popup-content strong {
+            color: #2c3e50;
+        }
+        .popup-content button {
+            width: 100%;
+            margin-top: 15px;
+            padding: 12px;
+            font-weight: bold;
+            background-color: #2196F3;
+        }
+        .popup-content button:hover {
+            background-color: #1976D2;
+        }
+    </style>
+</head>
+<body>
+    <div id="inicio" class="seccion activa">
+        <h1>InverIA: Inversiones Inmobiliarias Asistidas por Inteligencia Artificial</h1>
+        <p>Busca predios para analizar en CDMX:</p>
+        <input type="text" id="busqueda" placeholder="Describe zona de interés o tipo de desarrollo...">
+        <button onclick="mostrarMapa()">Buscar Predios</button>
+    </div>
+
+    <div id="mapa" class="seccion">
+        <h2>InverIA: Inversiones Inmobiliarias Asistidas por Inteligencia Artificial</h2>
+        <p>Predios potenciales encontrados en Escandón, Tabacalera, Roma Norte y Polanco</p>
+
+        <div id="mapa-container" style="height: 1000px; width: 100%; border: 2px solid #ddd; border-radius: 8px;"></div>
+
+        <button onclick="mostrarInicio()">Volver al Inicio</button>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+    <script>
+        var mapa;
+        var capaBase;
+        var capaCirculos;
+        var capaDestacados;
+
+        function mostrarMapa() {
+            document.getElementById('inicio').classList.remove('activa');
+            document.getElementById('mapa').classList.add('activa');
+            if (!mapa) inicializarMapa();
+        }
+
+        function mostrarInicio() {
+            document.getElementById('mapa').classList.remove('activa');
+            document.getElementById('inicio').classList.add('activa');
+        }
+
+        function abrirPDF(idPredio) {
+            var pdfs = {
+                1: 'files/analisis_1.pdf',
+                2: 'files/analisis_2.pdf',
+                3: 'files/analisis_3.pdf',
+                4: 'files/analisis_4.pdf'
+            };
+            if (pdfs[idPredio]) {
+                window.open(pdfs[idPredio], '_blank');
+            } else {
+                alert('PDF no encontrado para el predio ' + idPredio);
+            }
+        }
+
+        function inicializarMapa() {
+            // Crear mapa centrado en CDMX
+            mapa = L.map('mapa-container').setView([19.4326, -99.1332], 13);
+
+            // Capa base de OpenStreetMap
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '&copy; OpenStreetMap contributors'
+            }).addTo(mapa);
+
+            // Crear capas vacías en el orden correcto
+            capaBase = L.layerGroup().addTo(mapa);        // 3. FONDO: Colonias
+            capaCirculos = L.layerGroup().addTo(mapa);    // 2. MEDIO: Círculos
+            capaDestacados = L.layerGroup().addTo(mapa);  // 1. ARRIBA: Predios
+
+            // 1. CARGAR COLONIAS (fondo)
+            fetch('data/colonias_predios.geojson')
+                .then(response => response.json())
+                .then(data => {
+                    var geoJsonLayer = L.geoJSON(data, {
+                        style: {
+                            color: '#3388ff',
+                            weight: 1,
+                            fillColor: '#bbdefb',
+                            fillOpacity: 0.7
+                        },
+                        interactive: false
+                    });
+                    geoJsonLayer.addTo(capaBase);
+                })
+                .catch(error => console.error('Error cargando colonias:', error));
+
+            // 2. CARGAR PREDIOS DESTACADOS
+            fetch('data/predios_datos.geojson')
+                .then(response => response.json())
+                .then(data => {
+                    var geoJsonLayer = L.geoJSON(data, {
+                        style: {
+                            color: '#ff6d00',
+                            weight: 3,
+                            fillColor: '#ffeb3b',
+                            fillOpacity: 1.0
+                        },
+                        onEachFeature: function(feature, layer) {
+                            // Crear círculo para este predio
+                            if (layer.getBounds) {
+                                var center = layer.getBounds().getCenter();
+                                var circle = L.circle(center, {
+                                    color: '#ffeb3b',
+                                    fillColor: '#fff9c4',
+                                    fillOpacity: 0.6,
+                                    radius: 400
+                                });
+                                circle.addTo(capaCirculos);
+                            }
+
+                            // Popup con la información
+                            var popupContent = `
+                                <div class="popup-content">
+                                    <h3>${feature.properties.direccion || 'Dirección no disponible'}</h3>
+                                    <p><strong>Superficie:</strong> ${feature.properties.superficie || 'N/A'} m²</p>
+                                    <p><strong>Uso de Suelo:</strong> ${feature.properties.uso_suelo || 'No especificado'}</p>
+                                    <button onclick="abrirPDF(${feature.properties.id})">
+                                        Iniciar Análisis IA
+                                    </button>
+                                </div>
+                            `;
+                            layer.bindPopup(popupContent);
+                            layer.addTo(capaDestacados);
+                        }
+                    });
+
+                    // FORZAR ORDEN CORRECTO: Predios > Círculos > Colonias
+                    setTimeout(function() {
+                        mapa.removeLayer(capaDestacados);
+                        mapa.removeLayer(capaCirculos);
+                        mapa.removeLayer(capaBase);
+
+                        // Añadir en el orden correcto:
+                        mapa.addLayer(capaBase);       // 3. Fondo
+                        mapa.addLayer(capaCirculos);   // 2. Medio
+                        mapa.addLayer(capaDestacados); // 1. Arriba
+                    }, 500);
+                })
+                .catch(error => console.error('Error cargando predios destacados:', error));
+        }
+    </script>
+</body>
+</html>
